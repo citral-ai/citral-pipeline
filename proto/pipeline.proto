@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package citral.pipeline;
+
+option go_package = "github.com/citral-ai/citral-pipeline/proto";
+
+// Pipeline service — called by job-manager to run audits.
+service PipelineService {
+  // Run a full audit pipeline on a document. Streams status updates back.
+  rpc RunAudit(AuditRequest) returns (stream AuditEvent);
+}
+
+message AuditRequest {
+  string audit_id = 1;
+  string document_url = 2;       // R2/S3 URL to the PDF
+  string sop_content = 3;        // SOP text for system prompt
+  AuditConfig config = 4;
+}
+
+message AuditConfig {
+  string auditor_model = 1;      // e.g. "claude-sonnet-4-20250514"
+  string conclusion_model = 2;
+  int32 max_concurrent = 3;      // max parallel auditor agents
+}
+
+// Streamed back to job-manager as pipeline progresses.
+message AuditEvent {
+  string audit_id = 1;
+  EventType type = 2;
+  string message = 3;
+
+  // Set depending on event type
+  DocumentTree tree = 4;           // on TREE_BUILT
+  SectionResult section_result = 5; // on SECTION_DONE
+  Conclusion conclusion = 6;       // on CONCLUSION_DONE
+  string error = 7;                // on ERROR
+}
+
+enum EventType {
+  STATUS_UPDATE = 0;    // general status (e.g. "extracting text")
+  TREE_BUILT = 1;       // PageIndex tree ready
+  SECTION_DONE = 2;     // one auditor agent finished
+  CONCLUSION_DONE = 3;  // conclusion agent finished
+  PIPELINE_DONE = 4;    // full pipeline complete
+  ERROR = 5;
+}
+
+message DocumentTree {
+  string json = 1;  // PageIndex tree as JSON string
+}
+
+message SectionResult {
+  string node_id = 1;
+  string node_title = 2;
+  string findings_json = 3;  // structured findings as JSON
+  int32 tokens_used = 4;
+  string model_id = 5;
+}
+
+message Conclusion {
+  int32 confidence_index = 1;   // 0-100
+  string summary_json = 2;     // chain of thought, suggestions, flags
+  int32 total_tokens = 3;
+}
